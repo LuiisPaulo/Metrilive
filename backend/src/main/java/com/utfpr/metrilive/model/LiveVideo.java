@@ -23,6 +23,10 @@ public class LiveVideo {
     private String description;
     private Date creationTime;
 
+    private Long viewCount;
+    private Long commentCount;
+    private Long shareCount;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "page_id")
     private FacebookPage page;

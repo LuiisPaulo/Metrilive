@@ -4,6 +4,7 @@ import com.restfb.types.Comment;
 import com.restfb.types.LiveVideo;
 import com.restfb.types.Page;
 import com.utfpr.metrilive.controller.dto.FacebookTokenRequest;
+import com.utfpr.metrilive.controller.dto.VideoUrlRequest;
 import com.utfpr.metrilive.service.FacebookService;
 import com.utfpr.metrilive.service.UserService;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +24,12 @@ public class FacebookController {
     @PostMapping("/token")
     public ResponseEntity<Void> setToken(@RequestBody FacebookTokenRequest request) {
         userService.setFacebookAccessToken(request.getAccessToken());
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/process-url")
+    public ResponseEntity<Void> processUrl(@RequestBody VideoUrlRequest request) {
+        facebookService.processVideoUrl(request.getUrl());
         return ResponseEntity.ok().build();
     }
 

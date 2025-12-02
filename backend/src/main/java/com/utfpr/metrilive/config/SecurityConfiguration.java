@@ -29,7 +29,8 @@ public class SecurityConfiguration {
                 .authorizeHttpRequests(req ->
                         req.requestMatchers("/api/auth/**", "/error", "/h2-console/**")
                                 .permitAll()
-                                .requestMatchers("/api/admin/**").hasAuthority(com.utfpr.metrilive.model.Role.ADMIN.name())
+                                .requestMatchers("/api/users/me").authenticated()
+                                .requestMatchers("/api/admin/**", "/api/users/**").hasAuthority(com.utfpr.metrilive.model.Role.ADMIN.name())
                                 .requestMatchers("/api/facebook/**").hasAnyAuthority(com.utfpr.metrilive.model.Role.ADMIN.name(), com.utfpr.metrilive.model.Role.GESTOR_DE_LIVES.name())
                                 .anyRequest()
                                 .authenticated()
