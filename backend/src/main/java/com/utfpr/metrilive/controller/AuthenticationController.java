@@ -4,6 +4,7 @@ import com.utfpr.metrilive.controller.dto.AuthenticationRequest;
 import com.utfpr.metrilive.controller.dto.AuthenticationResponse;
 import com.utfpr.metrilive.controller.dto.RegisterRequest;
 import com.utfpr.metrilive.service.AuthenticationService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,5 +31,15 @@ public class AuthenticationController {
             @RequestBody AuthenticationRequest request
     ) {
         return ResponseEntity.ok(service.authenticate(request));
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(HttpServletRequest request) {
+        final String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String jwt = authHeader.substring(7);
+            service.logout(jwt);
+        }
+        return ResponseEntity.ok().build();
     }
 }

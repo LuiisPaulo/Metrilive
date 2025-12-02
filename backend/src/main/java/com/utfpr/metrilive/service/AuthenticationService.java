@@ -48,4 +48,8 @@ public class AuthenticationService {
                 .accessToken(jwtToken)
                 .build();
     }
+
+    public void logout(String token) {
+        jwtService.invalidateToken(token);
+    }
 }

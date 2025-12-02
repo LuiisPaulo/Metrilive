@@ -11,16 +11,15 @@ import com.restfb.types.LiveVideo;
 import com.restfb.types.Page;
 import com.restfb.types.Video;
 import com.utfpr.metrilive.model.User;
-import com.utfpr.metrilive.repository.CommentRepository;
-import com.utfpr.metrilive.repository.FacebookPageRepository;
-import com.utfpr.metrilive.repository.LiveVideoRepository;
-import com.utfpr.metrilive.repository.UserRepository;
+import com.utfpr.metrilive.model.VideoMetricHistory;
+import com.utfpr.metrilive.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
+import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Matcher;
@@ -35,6 +34,7 @@ public class FacebookService {
     private final FacebookPageRepository facebookPageRepository;
     private final LiveVideoRepository liveVideoRepository;
     private final CommentRepository commentRepository;
+    private final VideoMetricHistoryRepository videoMetricHistoryRepository;
 
     private User getAuthenticatedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -96,6 +96,7 @@ public class FacebookService {
                             .page(parentPage.get())
                             .build();
                     liveVideoRepository.save(videoEntity);
+                    saveMetricHistory(videoEntity);
                 });
                 log.info("Vídeos ao vivo salvos no banco de dados associados à página {}.", pageId);
             } else {
@@ -188,6 +189,7 @@ public class FacebookService {
                     .page(pageEntity)
                     .build();
             liveVideoRepository.save(videoEntity);
+            saveMetricHistory(videoEntity);
             log.info("Vídeo '{}' salvo no banco com métricas.", video.getTitle());
 
             Connection<Comment> comments = client.fetchConnection(videoId + "/comments", Comment.class);
@@ -210,6 +212,17 @@ public class FacebookService {
             log.error("Erro ao processar URL do vídeo {}: {}", url, e.getMessage());
             throw new RuntimeException("Erro ao processar vídeo do Facebook.", e);
         }
+    }
+
+    private void saveMetricHistory(com.utfpr.metrilive.model.LiveVideo video) {
+        VideoMetricHistory history = VideoMetricHistory.builder()
+                .liveVideo(video)
+                .collectedAt(new Date())
+                .viewCount(video.getViewCount() != null ? video.getViewCount() : 0L)
+                .commentCount(video.getCommentCount() != null ? video.getCommentCount() : 0L)
+                .shareCount(video.getShareCount() != null ? video.getShareCount() : 0L)
+                .build();
+        videoMetricHistoryRepository.save(history);
     }
 
     private String extractVideoIdFromUrl(String url) {
