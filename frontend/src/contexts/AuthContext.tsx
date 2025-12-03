@@ -40,8 +40,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (username: string, password: string) => {
     const response = await authService.login(username, password)
-    setToken(response.token)
-    localStorage.setItem('token', response.token)
+    setToken(response.access_token)
+    localStorage.setItem('token', response.access_token)
     await fetchUser()
   }
 

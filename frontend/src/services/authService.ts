@@ -12,7 +12,7 @@ interface RegisterRequest {
 }
 
 interface AuthResponse {
-  token: string
+  access_token: string
 }
 
 interface User {
@@ -34,13 +34,13 @@ class AuthService {
       username,
       password,
     } as LoginRequest)
-    this.setToken(response.data.token)
+    this.setToken(response.data.access_token)
     return response.data
   }
 
   async register(data: RegisterRequest): Promise<AuthResponse> {
     const response = await api.post<AuthResponse>('/auth/register', data)
-    this.setToken(response.data.token)
+    this.setToken(response.data.access_token)
     return response.data
   }
 
