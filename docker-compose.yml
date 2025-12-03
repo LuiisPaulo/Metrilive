@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: metrilivedb
       POSTGRES_USER: metrilive
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: vipit123
     ports:
       - "5432:5432"
     volumes:
