@@ -40,6 +40,11 @@ class FacebookService {
     return response.data
   }
 
+  async getAllStoredPages(): Promise<FacebookPage[]> {
+    const response = await api.get<FacebookPage[]>('/facebook/all-pages')
+    return response.data
+  }
+
   async getLiveVideos(pageId: string): Promise<LiveVideo[]> {
     const response = await api.get<LiveVideo[]>(`/facebook/pages/${pageId}/lives`)
     return response.data

@@ -11,20 +11,21 @@ import com.restfb.types.Comment;
 import com.restfb.types.LiveVideo;
 import com.restfb.types.Page;
 import com.restfb.types.Video;
+import com.utfpr.metrilive.model.Role;
 import com.utfpr.metrilive.model.User;
 import com.utfpr.metrilive.model.VideoMetricHistory;
 import com.utfpr.metrilive.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -36,47 +37,66 @@ public class FacebookService {
     private final LiveVideoRepository liveVideoRepository;
     private final CommentRepository commentRepository;
     private final VideoMetricHistoryRepository videoMetricHistoryRepository;
+    private final UserService userService;
 
-    private User getAuthenticatedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new UsernameNotFoundException("Usuário não encontrado: " + username));
+    private FacebookClient getFacebookClient() {
+        User currentUser = userService.getCurrentUser();
+        String token = userService.getEffectiveFacebookToken(currentUser);
+        return new DefaultFacebookClient(token, Version.LATEST);
     }
 
-    private FacebookClient getFacebookClient(User user) {
-        if (user.getFacebookAccessToken() != null) {
-            return new DefaultFacebookClient(user.getFacebookAccessToken(), Version.LATEST);
-        }
-        log.warn("Tentativa de acesso ao Facebook sem token configurado para o usuário: {}", user.getUsername());
-        throw new IllegalStateException("Token de acesso do Facebook não configurado para o usuário.");
+    public List<com.utfpr.metrilive.model.FacebookPage> getAllStoredPages() {
+        return facebookPageRepository.findAll();
     }
 
     public List<com.utfpr.metrilive.model.LiveVideo> getAllSavedVideos() {
-        return liveVideoRepository.findAll();
+        User currentUser = userService.getCurrentUser();
+        if (currentUser.getRole() == Role.ADMIN) {
+            return liveVideoRepository.findAll();
+        } else {
+            Set<String> authorizedPageIds = currentUser.getAuthorizedPages().stream()
+                    .map(com.utfpr.metrilive.model.FacebookPage::getId)
+                    .collect(Collectors.toSet());
+            
+            return liveVideoRepository.findAll().stream()
+                    .filter(video -> video.getPage() != null && authorizedPageIds.contains(video.getPage().getId()))
+                    .collect(Collectors.toList());
+        }
     }
 
     public List<Page> getPages() {
-        User user = getAuthenticatedUser();
+        User currentUser = userService.getCurrentUser();
         try {
-            log.info("Iniciando busca de páginas do Facebook para o usuário: {}", user.getUsername());
-            FacebookClient client = getFacebookClient(user);
+            log.info("Iniciando busca de páginas do Facebook para o usuário: [{}]", currentUser.getUsername());
+            FacebookClient client = getFacebookClient();
             
+            List<Page> facebookPages;
             try {
-                Connection<Page> pages = client.fetchConnection("me/accounts", Page.class);
-                List<Page> data = pages.getData();
-                log.info("Busca de páginas concluída (User Token). Total encontrado: {}", data.size());
-                savePages(data, user);
-                return data;
+                Connection<Page> pagesConnection = client.fetchConnection("me/accounts", Page.class);
+                facebookPages = pagesConnection.getData();
+                log.info("Busca de páginas concluída. Total encontrado no Facebook: [{}]", facebookPages.size());
             } catch (FacebookGraphException e) {
                 if (e.getErrorCode() == 100) {
                     log.info("Falha em 'me/accounts'. Tentando buscar 'me' (Page Token)...");
                     Page page = client.fetchObject("me", Page.class);
-                    List<Page> data = List.of(page);
-                    log.info("Página recuperada via Page Token: {}", page.getName());
-                    savePages(data, user);
-                    return data;
+                    facebookPages = List.of(page);
+                } else {
+                    throw e;
                 }
-                throw e;
+            }
+
+            savePages(facebookPages, currentUser);
+
+            if (currentUser.getRole() == Role.ADMIN) {
+                return facebookPages;
+            } else {
+                Set<String> authorizedPageIds = currentUser.getAuthorizedPages().stream()
+                        .map(com.utfpr.metrilive.model.FacebookPage::getId)
+                        .collect(Collectors.toSet());
+                
+                return facebookPages.stream()
+                        .filter(page -> authorizedPageIds.contains(page.getId()))
+                        .collect(Collectors.toList());
             }
 
         } catch (FacebookException e) {
@@ -87,21 +107,24 @@ public class FacebookService {
 
     private void savePages(List<Page> pages, User user) {
         pages.forEach(page -> {
-            com.utfpr.metrilive.model.FacebookPage pageEntity = com.utfpr.metrilive.model.FacebookPage.builder()
-                    .id(page.getId())
-                    .name(page.getName())
-                    .user(user)
-                    .build();
-            facebookPageRepository.save(pageEntity);
+            Optional<com.utfpr.metrilive.model.FacebookPage> existing = facebookPageRepository.findById(page.getId());
+            if (existing.isEmpty()) {
+                com.utfpr.metrilive.model.FacebookPage pageEntity = com.utfpr.metrilive.model.FacebookPage.builder()
+                        .id(page.getId())
+                        .name(page.getName())
+                        .user(user)
+                        .build();
+                facebookPageRepository.save(pageEntity);
+            }
         });
-        log.info("Páginas salvas no banco de dados.");
+        log.info("Páginas sincronizadas com o banco de dados.");
     }
 
     public List<LiveVideo> getLiveVideos(String pageId) {
-        User user = getAuthenticatedUser();
+        checkPageAccess(pageId);
         try {
             log.info("Iniciando busca de vídeos ao vivo para a página ID: {}", pageId);
-            FacebookClient client = getFacebookClient(user);
+            FacebookClient client = getFacebookClient();
             Connection<LiveVideo> liveVideos = client.fetchConnection(pageId + "/live_videos", LiveVideo.class);
             List<LiveVideo> data = liveVideos.getData();
             log.info("Busca de vídeos ao vivo concluída. Total encontrado: {}", data.size());
@@ -119,9 +142,6 @@ public class FacebookService {
                     liveVideoRepository.save(videoEntity);
                     saveMetricHistory(videoEntity);
                 });
-                log.info("Vídeos ao vivo salvos no banco de dados associados à página {}.", pageId);
-            } else {
-                log.warn("Página ID {} não encontrada no banco local. Os vídeos não serão salvos.", pageId);
             }
 
             return data;
@@ -132,16 +152,18 @@ public class FacebookService {
     }
 
     public List<Comment> getLiveVideoComments(String liveVideoId) {
-        User user = getAuthenticatedUser();
+        Optional<com.utfpr.metrilive.model.LiveVideo> videoOpt = liveVideoRepository.findById(liveVideoId);
+        if (videoOpt.isPresent()) {
+            checkPageAccess(videoOpt.get().getPage().getId());
+        }
+        
         try {
             log.info("Iniciando busca de comentários para o vídeo ID: {}", liveVideoId);
-            FacebookClient client = getFacebookClient(user);
+            FacebookClient client = getFacebookClient();
             Connection<Comment> comments = client.fetchConnection(liveVideoId + "/comments", Comment.class);
             List<Comment> data = comments.getData();
-            log.info("Busca de comentários concluída. Total encontrado: {}", data.size());
 
-            Optional<com.utfpr.metrilive.model.LiveVideo> parentVideo = liveVideoRepository.findById(liveVideoId);
-            if (parentVideo.isPresent()) {
+            if (videoOpt.isPresent()) {
                 data.forEach(comment -> {
                     com.utfpr.metrilive.model.Comment commentEntity = com.utfpr.metrilive.model.Comment.builder()
                             .id(comment.getId())
@@ -149,13 +171,10 @@ public class FacebookService {
                             .createdTime(comment.getCreatedTime())
                             .fromId(comment.getFrom() != null ? comment.getFrom().getId() : null)
                             .fromName(comment.getFrom() != null ? comment.getFrom().getName() : null)
-                            .liveVideo(parentVideo.get())
+                            .liveVideo(videoOpt.get())
                             .build();
                     commentRepository.save(commentEntity);
                 });
-                log.info("Comentários salvos no banco de dados associados ao vídeo {}.", liveVideoId);
-            } else {
-                log.warn("Vídeo ID {} não encontrado no banco local. Os comentários não serão salvos.", liveVideoId);
             }
 
             return data;
@@ -165,18 +184,34 @@ public class FacebookService {
         }
     }
 
+    private void checkPageAccess(String pageId) {
+        User currentUser = userService.getCurrentUser();
+        if (currentUser.getRole() == Role.ADMIN) return;
+
+        boolean hasAccess = currentUser.getAuthorizedPages().stream()
+                .anyMatch(p -> p.getId().equals(pageId));
+        
+        if (!hasAccess) {
+            throw new RuntimeException("Acesso negado: Você não tem permissão para visualizar dados desta página.");
+        }
+    }
+
     public void processVideoUrl(String url) {
-        User user = getAuthenticatedUser();
+        User user = userService.getCurrentUser();
         String videoId = extractVideoIdFromUrl(url);
         log.info("Processando URL do vídeo. ID extraído: {}", videoId);
 
         try {
-            FacebookClient client = getFacebookClient(user);
+            FacebookClient client = getFacebookClient();
             
             Video video = client.fetchObject(videoId, Video.class, Parameter.with("fields", "id,title,description,created_time,from,views,comments.summary(true)"));
             
             if (video == null) {
                 throw new RuntimeException("Vídeo não encontrado no Facebook com o ID: " + videoId);
+            }
+            
+            if (video.getFrom() != null) {
+                 checkPageAccess(video.getFrom().getId());
             }
 
             com.utfpr.metrilive.model.FacebookPage pageEntity;
@@ -187,17 +222,13 @@ public class FacebookService {
                         .user(user)
                         .build();
                 facebookPageRepository.save(pageEntity);
-                log.info("Página '{}' salva/atualizada no banco.", video.getFrom().getName());
             } else {
                  throw new RuntimeException("Não foi possível identificar a página de origem do vídeo.");
             }
 
             Long viewCount = video.getViews() != null ? video.getViews() : 0L;
-            // Long shareCount = video.getShares() != null ? video.getShares().getCount() : 0L;
             Long shareCount = 0L; 
             Long commentCount = (video.getComments() != null && video.getComments().getTotalCount() != null) ? video.getComments().getTotalCount() : 0L;
-
-            log.info("Métricas encontradas - Views: {}, Comments: {} (Shares indisponível nesta versão)", viewCount, commentCount);
 
             com.utfpr.metrilive.model.LiveVideo videoEntity = com.utfpr.metrilive.model.LiveVideo.builder()
                     .id(video.getId())
@@ -211,7 +242,6 @@ public class FacebookService {
                     .build();
             liveVideoRepository.save(videoEntity);
             saveMetricHistory(videoEntity);
-            log.info("Vídeo '{}' salvo no banco com métricas.", video.getTitle());
 
             Connection<Comment> comments = client.fetchConnection(videoId + "/comments", Comment.class);
             List<Comment> commentsData = comments.getData();
@@ -227,7 +257,6 @@ public class FacebookService {
                         .build();
                 commentRepository.save(commentEntity);
             });
-            log.info("{} comentários detalhados salvos para o vídeo.", commentsData.size());
 
         } catch (FacebookGraphException e) {
             if (e.getErrorCode() != null && e.getErrorCode() == 100 && e.getErrorSubcode() != null && e.getErrorSubcode() == 33) {
@@ -254,7 +283,6 @@ public class FacebookService {
     }
 
     private String extractVideoIdFromUrl(String url) {
-        log.info("Tentando extrair ID da URL: '{}'", url);
         if (url == null || url.isEmpty()) {
             throw new IllegalArgumentException("A URL do vídeo não pode ser vazia.");
         }
@@ -262,9 +290,7 @@ public class FacebookService {
         Pattern queryPattern = Pattern.compile("[?&]v=([0-9]+)");
         Matcher queryMatcher = queryPattern.matcher(url);
         if (queryMatcher.find()) {
-            String id = queryMatcher.group(1);
-            log.info("ID extraído via query param (v=): {}", id);
-            return id;
+            return queryMatcher.group(1);
         }
 
         String[] pathMarkers = {"/videos/", "/reel/"};
@@ -274,24 +300,18 @@ public class FacebookService {
                 String[] parts = url.split(marker);
                 if (parts.length > 1) {
                     String pathAfterMarker = parts[1];
-                    log.info("Caminho após {}: '{}'", marker, pathAfterMarker);
-                    
                     if (pathAfterMarker.contains("?")) {
                         pathAfterMarker = pathAfterMarker.substring(0, pathAfterMarker.indexOf("?"));
                     }
                     String[] segments = pathAfterMarker.split("/");
-                    
                     for (String segment : segments) {
                         if (segment.matches("^[0-9]+$")) {
-                            log.info("ID numérico encontrado (Reel/Video): {}", segment);
                             return segment;
                         }
                     }
                 }
             }
         }
-
-        log.error("Falha ao extrair ID. URL: {}", url);
         throw new IllegalArgumentException("Não foi possível extrair o ID do vídeo da URL fornecida: " + url);
     }
 }

@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { facebookService, FacebookPage, LiveVideo, FacebookComment } from '../services/facebookService'
+import { useAuth } from '../contexts/AuthContext'
 
 export default function FacebookConnect() {
+  const { user } = useAuth()
   const [accessToken, setAccessToken] = useState('')
   const [videoUrl, setVideoUrl] = useState('')
   const [pages, setPages] = useState<FacebookPage[]>([])
@@ -106,29 +108,31 @@ export default function FacebookConnect() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-lg shadow-md">
-          <h2 className="text-xl font-semibold mb-4">Configurar Token de Acesso</h2>
-          <form onSubmit={handleSetToken} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Access Token</label>
-              <input
-                type="text"
-                value={accessToken}
-                onChange={(e) => setAccessToken(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                placeholder="Cole seu token aqui..."
-                required
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={loadingToken}
-              className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 disabled:opacity-50"
-            >
-              {loadingToken ? 'Salvando...' : 'Salvar Token'}
-            </button>
-          </form>
-        </div>
+        {user?.role === 'ADMIN' && (
+          <div className="bg-white p-6 rounded-lg shadow-md">
+            <h2 className="text-xl font-semibold mb-4">Configurar Token de Acesso</h2>
+            <form onSubmit={handleSetToken} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Access Token</label>
+                <input
+                  type="text"
+                  value={accessToken}
+                  onChange={(e) => setAccessToken(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  placeholder="Cole seu token aqui..."
+                  required
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loadingToken}
+                className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 disabled:opacity-50"
+              >
+                {loadingToken ? 'Salvando...' : 'Salvar Token'}
+              </button>
+            </form>
+          </div>
+        )}
 
         <div className="bg-white p-6 rounded-lg shadow-md">
           <h2 className="text-xl font-semibold mb-4">Processar URL de Vídeo</h2>

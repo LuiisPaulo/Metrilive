@@ -48,7 +48,7 @@ public class SecurityConfiguration {
                                 .permitAll()
                                 .requestMatchers("/api/users/me").authenticated()
                                 .requestMatchers("/api/admin/**", "/api/users/**").hasAuthority(com.utfpr.metrilive.model.Role.ADMIN.name())
-                                .requestMatchers("/api/facebook/**").hasAnyAuthority(com.utfpr.metrilive.model.Role.ADMIN.name(), com.utfpr.metrilive.model.Role.GESTOR_DE_LIVES.name())
+                                .requestMatchers("/api/facebook/**").hasAnyAuthority(com.utfpr.metrilive.model.Role.ADMIN.name(), com.utfpr.metrilive.model.Role.GESTOR_DE_LIVES.name(), com.utfpr.metrilive.model.Role.EQUIPE_DE_PRODUCAO.name())
                                 .anyRequest()
                                 .authenticated()
                 )

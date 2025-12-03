@@ -1,6 +1,7 @@
 package com.utfpr.metrilive.controller.dto;
 
 import com.utfpr.metrilive.model.Role;
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -15,4 +16,5 @@ public class RegisterRequest {
     private String email;
     private String password;
     private Role role;
+    private List<String> authorizedPageIds;
 }

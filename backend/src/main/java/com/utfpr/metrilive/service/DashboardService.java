@@ -1,9 +1,10 @@
 package com.utfpr.metrilive.service;
 
+import com.utfpr.metrilive.model.Role;
+import com.utfpr.metrilive.model.User;
 import com.utfpr.metrilive.repository.LiveVideoRepository;
 import com.utfpr.metrilive.repository.projection.DashboardProjection;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -15,10 +16,16 @@ import java.util.List;
 public class DashboardService {
 
     private final LiveVideoRepository liveVideoRepository;
+    private final UserService userService;
 
     public List<DashboardProjection> getDashboardMetrics() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return liveVideoRepository.getDashboardMetrics(username);
+        User user = userService.getCurrentUser();
+        
+        if (user.getRole() == Role.ADMIN) {
+            return liveVideoRepository.getDashboardMetricsForAdmin();
+        } else {
+            return liveVideoRepository.getDashboardMetricsForUser(user.getId());
+        }
     }
 
     public byte[] generateCsvReport() {

@@ -51,6 +51,11 @@ public class FacebookController {
         return ResponseEntity.ok(videos);
     }
 
+    @GetMapping("/all-pages")
+    public ResponseEntity<List<com.utfpr.metrilive.model.FacebookPage>> getAllStoredPages() {
+        return ResponseEntity.ok(facebookService.getAllStoredPages());
+    }
+
     @GetMapping("/pages")
     public ResponseEntity<List<Page>> getPages() {
         return ResponseEntity.ok(facebookService.getPages());

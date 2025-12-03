@@ -5,6 +5,8 @@ import Download from './pages/Download'
 import View from './pages/View'
 import Login from './pages/Login'
 import FacebookConnect from './pages/FacebookConnect'
+import Users from './pages/Users'
+import UserForm from './pages/UserForm'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -28,6 +30,9 @@ function AppRoutes() {
         <Route path="baixar" element={<Download />} />
         <Route path="visualizar" element={<View />} />
         <Route path="facebook" element={<FacebookConnect />} />
+        <Route path="usuarios" element={<Users />} />
+        <Route path="usuarios/novo" element={<UserForm />} />
+        <Route path="usuarios/editar/:id" element={<UserForm />} />
       </Route>
     </Routes>
   )

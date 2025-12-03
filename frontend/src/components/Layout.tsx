@@ -49,6 +49,14 @@ export default function Layout() {
             >
               Facebook
             </button>
+            {user?.role === 'ADMIN' && (
+              <button
+                onClick={() => navigate('/usuarios')}
+                className={getButtonClass('/usuarios')}
+              >
+                Usuários
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-4">
             <span className="text-gray-700">Olá, {user?.username}</span>
