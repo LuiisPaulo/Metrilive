@@ -43,6 +43,12 @@ export default function Layout() {
             >
               Visualizar
             </button>
+            <button
+              onClick={() => navigate('/facebook')}
+              className={getButtonClass('/facebook')}
+            >
+              Facebook
+            </button>
           </div>
           <div className="flex items-center gap-4">
             <span className="text-gray-700">Olá, {user?.username}</span>

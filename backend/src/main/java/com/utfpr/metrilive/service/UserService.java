@@ -4,6 +4,7 @@ import com.utfpr.metrilive.controller.dto.UserUpdateRequest;
 import com.utfpr.metrilive.model.User;
 import com.utfpr.metrilive.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -13,6 +14,7 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class UserService {
 
     private final UserRepository userRepository;
@@ -20,9 +22,17 @@ public class UserService {
 
     public void setFacebookAccessToken(String token) {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        userRepository.findByUsername(username).ifPresent(user -> {
+        log.info("Recebida solicitação para atualizar token do Facebook do usuário: {}", username);
+        
+        userRepository.findByUsername(username).ifPresentOrElse(user -> {
+            String oldToken = user.getFacebookAccessToken();
+            boolean isNew = !token.equals(oldToken);
+            
             user.setFacebookAccessToken(token);
             userRepository.save(user);
+            log.info("Token do Facebook atualizado com sucesso para o usuário: {}. Token mudou? {}", username, isNew);
+        }, () -> {
+            log.error("Falha ao atualizar token: Usuário {} não encontrado no banco.", username);
         });
     }
 

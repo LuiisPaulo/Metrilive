@@ -4,6 +4,7 @@ import com.restfb.types.Comment;
 import com.restfb.types.LiveVideo;
 import com.restfb.types.Page;
 import com.utfpr.metrilive.controller.dto.FacebookTokenRequest;
+import com.utfpr.metrilive.controller.dto.LiveVideoDTO;
 import com.utfpr.metrilive.controller.dto.VideoUrlRequest;
 import com.utfpr.metrilive.service.FacebookService;
 import com.utfpr.metrilive.service.UserService;
@@ -12,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/facebook")
@@ -31,6 +33,22 @@ public class FacebookController {
     public ResponseEntity<Void> processUrl(@RequestBody VideoUrlRequest request) {
         facebookService.processVideoUrl(request.getUrl());
         return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/videos")
+    public ResponseEntity<List<LiveVideoDTO>> getAllSavedVideos() {
+        List<LiveVideoDTO> videos = facebookService.getAllSavedVideos().stream()
+                .map(video -> LiveVideoDTO.builder()
+                        .id(video.getId())
+                        .title(video.getTitle())
+                        .description(video.getDescription())
+                        .creationTime(video.getCreationTime())
+                        .viewCount(video.getViewCount())
+                        .commentCount(video.getCommentCount())
+                        .shareCount(video.getShareCount())
+                        .build())
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(videos);
     }
 
     @GetMapping("/pages")

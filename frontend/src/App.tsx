@@ -4,6 +4,7 @@ import Home from './pages/Home'
 import Download from './pages/Download'
 import View from './pages/View'
 import Login from './pages/Login'
+import FacebookConnect from './pages/FacebookConnect'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -26,6 +27,7 @@ function AppRoutes() {
         <Route index element={<Home />} />
         <Route path="baixar" element={<Download />} />
         <Route path="visualizar" element={<View />} />
+        <Route path="facebook" element={<FacebookConnect />} />
       </Route>
     </Routes>
   )

@@ -6,6 +6,7 @@ import com.restfb.FacebookClient;
 import com.restfb.Parameter;
 import com.restfb.Version;
 import com.restfb.exception.FacebookException;
+import com.restfb.exception.FacebookGraphException;
 import com.restfb.types.Comment;
 import com.restfb.types.LiveVideo;
 import com.restfb.types.Page;
@@ -50,30 +51,50 @@ public class FacebookService {
         throw new IllegalStateException("Token de acesso do Facebook não configurado para o usuário.");
     }
 
+    public List<com.utfpr.metrilive.model.LiveVideo> getAllSavedVideos() {
+        return liveVideoRepository.findAll();
+    }
+
     public List<Page> getPages() {
         User user = getAuthenticatedUser();
         try {
             log.info("Iniciando busca de páginas do Facebook para o usuário: {}", user.getUsername());
             FacebookClient client = getFacebookClient(user);
-            Connection<Page> pages = client.fetchConnection("me/accounts", Page.class);
-            List<Page> data = pages.getData();
-            log.info("Busca de páginas concluída com sucesso. Total encontrado: {}", data.size());
+            
+            try {
+                Connection<Page> pages = client.fetchConnection("me/accounts", Page.class);
+                List<Page> data = pages.getData();
+                log.info("Busca de páginas concluída (User Token). Total encontrado: {}", data.size());
+                savePages(data, user);
+                return data;
+            } catch (FacebookGraphException e) {
+                if (e.getErrorCode() == 100) {
+                    log.info("Falha em 'me/accounts'. Tentando buscar 'me' (Page Token)...");
+                    Page page = client.fetchObject("me", Page.class);
+                    List<Page> data = List.of(page);
+                    log.info("Página recuperada via Page Token: {}", page.getName());
+                    savePages(data, user);
+                    return data;
+                }
+                throw e;
+            }
 
-            data.forEach(page -> {
-                com.utfpr.metrilive.model.FacebookPage pageEntity = com.utfpr.metrilive.model.FacebookPage.builder()
-                        .id(page.getId())
-                        .name(page.getName())
-                        .user(user)
-                        .build();
-                facebookPageRepository.save(pageEntity);
-            });
-            log.info("Páginas salvas no banco de dados.");
-
-            return data;
         } catch (FacebookException e) {
             log.error("Erro ao buscar páginas do Facebook: {}", e.getMessage());
             throw new RuntimeException("Erro ao se comunicar com o Facebook para buscar páginas.", e);
         }
+    }
+
+    private void savePages(List<Page> pages, User user) {
+        pages.forEach(page -> {
+            com.utfpr.metrilive.model.FacebookPage pageEntity = com.utfpr.metrilive.model.FacebookPage.builder()
+                    .id(page.getId())
+                    .name(page.getName())
+                    .user(user)
+                    .build();
+            facebookPageRepository.save(pageEntity);
+        });
+        log.info("Páginas salvas no banco de dados.");
     }
 
     public List<LiveVideo> getLiveVideos(String pageId) {
@@ -152,7 +173,7 @@ public class FacebookService {
         try {
             FacebookClient client = getFacebookClient(user);
             
-            Video video = client.fetchObject(videoId, Video.class, Parameter.with("fields", "id,title,description,created_time,from,views,shares,comments.summary(true)"));
+            Video video = client.fetchObject(videoId, Video.class, Parameter.with("fields", "id,title,description,created_time,from,views,comments.summary(true)"));
             
             if (video == null) {
                 throw new RuntimeException("Vídeo não encontrado no Facebook com o ID: " + videoId);
@@ -180,7 +201,7 @@ public class FacebookService {
 
             com.utfpr.metrilive.model.LiveVideo videoEntity = com.utfpr.metrilive.model.LiveVideo.builder()
                     .id(video.getId())
-                    .title(video.getTitle())
+                    .title(video.getTitle() != null && !video.getTitle().isEmpty() ? video.getTitle() : "Vídeo sem título")
                     .description(video.getDescription())
                     .creationTime(video.getCreatedTime())
                     .viewCount(viewCount)
@@ -208,8 +229,15 @@ public class FacebookService {
             });
             log.info("{} comentários detalhados salvos para o vídeo.", commentsData.size());
 
+        } catch (FacebookGraphException e) {
+            if (e.getErrorCode() != null && e.getErrorCode() == 100 && e.getErrorSubcode() != null && e.getErrorSubcode() == 33) {
+                log.error("Erro de permissão do Facebook (Objeto não encontrado ou acesso negado).");
+                throw new RuntimeException("Acesso negado pelo Facebook. Verifique se o App está em modo Live ou se você administra a página do vídeo.", e);
+            }
+            log.error("Erro de API do Graph Facebook ao processar vídeo {}: {}", url, e.getMessage());
+            throw new RuntimeException("Erro de API do Facebook ao buscar dados do vídeo.", e);
         } catch (FacebookException e) {
-            log.error("Erro ao processar URL do vídeo {}: {}", url, e.getMessage());
+            log.error("Erro genérico do Facebook ao processar URL do vídeo {}: {}", url, e.getMessage());
             throw new RuntimeException("Erro ao processar vídeo do Facebook.", e);
         }
     }
@@ -226,14 +254,44 @@ public class FacebookService {
     }
 
     private String extractVideoIdFromUrl(String url) {
-        // Padrões comuns: 
-        // facebook.com/page/videos/12345
-        // facebook.com/watch/?v=12345
-        Pattern pattern = Pattern.compile(".*(?:/videos/|v=|video\\.php\\?v=)([0-9]+).*");
-        Matcher matcher = pattern.matcher(url);
-        if (matcher.find()) {
-            return matcher.group(1);
+        log.info("Tentando extrair ID da URL: '{}'", url);
+        if (url == null || url.isEmpty()) {
+            throw new IllegalArgumentException("A URL do vídeo não pode ser vazia.");
         }
-        throw new IllegalArgumentException("Não foi possível extrair o ID do vídeo da URL fornecida.");
+
+        Pattern queryPattern = Pattern.compile("[?&]v=([0-9]+)");
+        Matcher queryMatcher = queryPattern.matcher(url);
+        if (queryMatcher.find()) {
+            String id = queryMatcher.group(1);
+            log.info("ID extraído via query param (v=): {}", id);
+            return id;
+        }
+
+        String[] pathMarkers = {"/videos/", "/reel/"};
+        
+        for (String marker : pathMarkers) {
+            if (url.contains(marker)) {
+                String[] parts = url.split(marker);
+                if (parts.length > 1) {
+                    String pathAfterMarker = parts[1];
+                    log.info("Caminho após {}: '{}'", marker, pathAfterMarker);
+                    
+                    if (pathAfterMarker.contains("?")) {
+                        pathAfterMarker = pathAfterMarker.substring(0, pathAfterMarker.indexOf("?"));
+                    }
+                    String[] segments = pathAfterMarker.split("/");
+                    
+                    for (String segment : segments) {
+                        if (segment.matches("^[0-9]+$")) {
+                            log.info("ID numérico encontrado (Reel/Video): {}", segment);
+                            return segment;
+                        }
+                    }
+                }
+            }
+        }
+
+        log.error("Falha ao extrair ID. URL: {}", url);
+        throw new IllegalArgumentException("Não foi possível extrair o ID do vídeo da URL fornecida: " + url);
     }
 }
